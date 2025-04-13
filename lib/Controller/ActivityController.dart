@@ -20,11 +20,14 @@ class ActivityController {
     _headers["Content-Type"] = "application/json; charset=UTF-8";
   }
 
+  // Fetch a single activity from the API
   Future<Activity?> getActivity() async {
     try {
+      // Make a GET request to the server
       _res = await http.get(Uri.parse(server), headers: _headers);
       _parseResult();
 
+      // Check if the response is successful and parse the activity
       if (status() == 200 && _resultData is Map<String, dynamic>) {
         return Activity.fromJson(_resultData, 1);
       }
@@ -34,8 +37,10 @@ class ActivityController {
     return null;
   }
 
+  // Fetch a random activity from the API with an optional type filter
   Future<Activity?> getRandomActivity({String? type}) async {
     try {
+      // Construct the URL with type filter if provided
       final uri = Uri.parse(type != null ? '$server?type=$type' : server);
       final response = await http.get(uri, headers: _headers);
 
@@ -53,7 +58,7 @@ class ActivityController {
 
 
 
-        return Activity.fromJson(jsonData, newId);
+        return Activity.fromJson(jsonData, newId);// Return a new activity with a unique ID
       } else {
         print('Failed to load activity. Status code: ${response.statusCode}');
       }
@@ -70,20 +75,21 @@ class ActivityController {
       history.removeLast();
     }
     history.forEach((activity) {
-      print("History Activity ID: ${activity.id}");
+      //print("History Activity ID: ${activity.id}");
     });
     history.add(activity);
     final historyJson = jsonEncode(history.map((e) => e.toJson()).toList());
     await prefs.setString(historyKey, historyJson);
   }
 
+  // Retrieve activity history from SharedPreferences
   Future<List<Activity>> getHistory() async {
     final prefs = await SharedPreferences.getInstance();
     final jsonString = prefs.getString(historyKey);
 
     if (jsonString != null) {
       final List decoded = json.decode(jsonString);
-      return decoded.map((e) => Activity.fromJson(e, e['id'])).toList();
+      return decoded.map((e) => Activity.fromJson(e, e['id'])).toList(); // Convert list of maps into Activity objects
 
       // final history = decoded.map((e) => Activity.fromJson(e, e['id'])).toList();
       //
@@ -98,11 +104,11 @@ class ActivityController {
 
   void _parseResult() {
     try {
-      print("Raw response: ${_res?.body}");
+      //print("Raw response: ${_res?.body}");
       _resultData = jsonDecode(_res?.body ?? "");
     } catch (ex) {
       _resultData = _res?.body;
-      print("Exception in HTTP result parsing: $ex");
+      print("Exception in HTTP result parsing: $ex"); // Log the exception
     }
   }
 

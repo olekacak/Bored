@@ -1,59 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ActivityHistoryView.dart';
+import 'ActivityProvider.dart'; // Import the provider
 import '../controller/ActivityController.dart';
-import '../model/ActivityModel.dart';
 
-class HomeView extends StatefulWidget {
+class HomeView extends ConsumerWidget {
   const HomeView({super.key});
 
   @override
-  State<HomeView> createState() => _HomeViewState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watch providers
+    final selectedType = ref.watch(selectedTypeProvider);
+    final currentActivity = ref.watch(currentActivityProvider);
+    final activityHistory = ref.watch(activityHistoryProvider);
+    final loadSelectedTypeAsync = ref.watch(loadSelectedTypeProvider);
 
-class _HomeViewState extends State<HomeView> {
-  List<Activity> _history = []; // Activity history
-  Activity? _currentActivity; // Current activity
-  String _selectedType = ''; // Selected activity type
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSelectedType();
-  }
-
-  void _loadSelectedType() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _selectedType = prefs.getString('selected_type') ?? '';
-    });
-  }
-
-  void _getActivity() async {
-    Activity? activity = await ActivityController().getRandomActivity(type: _selectedType);
-    if (activity != null) {
-      setState(() {
-        _currentActivity = activity;
-      });
-      await ActivityController().postHistory(activity); // Save to local storage (SharedPreferences)
-    }
-  }
-
-  Future<void> _goToHistory() async {
-    _history = await ActivityController().getHistory();
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ActivityHistoryView(
-          history: _history,
-          selectedType: _selectedType,
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Bored API Explorer"),
@@ -63,60 +25,88 @@ class _HomeViewState extends State<HomeView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            DropdownButton<String>(
-              value: _selectedType,
-              hint: const Text("Select Activity Type"),
-              items: <String>['', 'recreational', 'social', 'education', 'diy', 'charity']
-                  .map((type) => DropdownMenuItem<String>(
-                value: type,
-                child: Text(type.isEmpty ? "None" : type),
-              ))
-                  .toList(),
-              onChanged: (value) async {
-                final prefs = await SharedPreferences.getInstance();
-                final newType = value ?? '';
-                await prefs.setString('selected_type', newType);
-
-                setState(() {
-                  _selectedType = newType;
-                });
+            // Use AsyncValue to load selected type from SharedPreferences
+            loadSelectedTypeAsync.when(
+              data: (loadedType) {
+                return DropdownButton<String>(
+                  value: selectedType.isEmpty ? loadedType : selectedType,
+                  hint: const Text("Select Activity Type"),
+                  items: <String>['', 'recreational', 'social', 'education', 'diy', 'charity']
+                      .map((type) => DropdownMenuItem<String>(
+                    value: type,
+                    child: Text(type.isEmpty ? "None" : type),
+                  ))
+                      .toList(),
+                  onChanged: (value) async {
+                    final prefs = await SharedPreferences.getInstance();
+                    final newType = value ?? '';
+                    await prefs.setString('selected_type', newType);
+                    ref.read(selectedTypeProvider.notifier).state = newType;
+                  },
+                );
               },
+              loading: () => const CircularProgressIndicator(),
+              error: (error, stackTrace) => Text('Error: $error'),
             ),
+
+            // Clear selected type from SharedPreferences
             TextButton(
               onPressed: () async {
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.remove('selected_type');
-                setState(() {
-                  _selectedType = '';
-                });
+                ref.read(selectedTypeProvider.notifier).state = '';
               },
               child: const Text(
                 "Clear Selection",
                 style: TextStyle(color: Colors.blue),
               ),
             ),
+
+            // Fetch new activity and update state + history
             ElevatedButton(
-              onPressed: _getActivity,
+              onPressed: () async {
+                final activity = await ref.read(randomActivityProvider.future);
+                if (activity != null) {
+                  ref.read(currentActivityProvider.notifier).state = activity;
+                  final history = await ActivityController().getHistory();
+                  ref.read(activityHistoryProvider.notifier).state = history;
+                }
+              },
               child: const Text("Next"),
             ),
             const SizedBox(height: 20),
-            if (_currentActivity != null)
+
+            // Show current activity
+            if (currentActivity != null)
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(_currentActivity!.activity, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      Text(currentActivity.activity, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 10),
-                      Text("Price: \$${_currentActivity!.price.toStringAsFixed(2)}"),
+                      Text("Price: \$${currentActivity.price.toStringAsFixed(2)}"),
                     ],
                   ),
                 ),
               ),
             const SizedBox(height: 20),
+
+            // Navigate to Activity History screen
             ElevatedButton(
-              onPressed: _goToHistory,
+              onPressed: () async {
+                ref.refresh(activityHistoryFetchProvider);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ActivityHistoryView(
+                      history: activityHistory,
+                      selectedType: selectedType,
+                    ),
+                  ),
+                );
+              },
               child: const Text("History"),
             ),
           ],
